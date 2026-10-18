@@ -1,0 +1,5 @@
+# Local development / tests only (not installed by Vercel).
+-r requirements.txt
+uvicorn[standard]>=0.30
+pytest>=8
+httpx>=0.27

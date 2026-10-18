@@ -1,103 +1,86 @@
-# TWIN — Enhancing Cybersecurity in Digital Twin Systems for Smart Factories
+# TWIN — Smart Factory Security (Vercel-ready)
 
-BE Computer Engineering major project. **Milestone 1** of an incremental build.
-Everything is **simulated**: devices, telemetry, attacks and security responses. No real factory or network is touched.
+Cybersecurity monitoring dashboard for simulated smart-factory digital twins. **All devices, telemetry, attacks and responses are simulated.**
+One Vercel project: **React + Vite + TypeScript** frontend and a **Python FastAPI** function, same origin (`/api/*`), hosted **PostgreSQL**.
 
-| Layer | Tech |
-|---|---|
-| Frontend | React 18 + Vite, Recharts, React Router (`frontend/`) |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2 (`backend/`) |
-| Database | PostgreSQL |
-| AI/ML | pandas, NumPy, scikit-learn Isolation Forest, SHAP |
+```
+api/index.py          Vercel Python entrypoint (exports ASGI `app`)
+backend/              FastAPI app: routers, simulator, security pipeline (Isolation Forest, IDS, risk, SHAP), services
+src/                  React + TypeScript dashboard
+vercel.json           build, /api rewrite, SPA fallback, function settings
+requirements.txt      pinned runtime deps (bundled into the function)   requirements-dev.txt  + uvicorn, pytest
+tests/  scripts/      pytest suite, detection evaluation
+```
 
-## What Milestone 1 contains
+## Environment variables
 
-- **Dashboard** (dark navy UI from the reference): sidebar, 4 summary cards, Digital Twins table, Recent Security Events, Threats Over Time, Anomaly Score Distribution, Device Status donut. Polls the API every 5 s. The header search filters both tables client-side.
-- **Factory simulator**: CNC machines, robotic arms, industrial controllers (PLC), temperature and pressure sensors; one digital twin record per device. Scenarios: `abnormal_temperature`, `suspicious_logins`, `network_spike`, `telemetry_manipulation`, plus `device_dropout`.
-- **Security pipeline** (`backend/app/security/`): preprocessing → Isolation Forest → rule-based IDS → threat classification → risk assessment. SHAP top-feature explanations are stored on every event (`details.explanation`).
-- **API** (`/docs` for OpenAPI): `/api/dashboard/*`, `/api/simulator/*`, `/api/incidents`, `/api/health`.
-- Every dashboard number is a query against PostgreSQL. There are no hard-coded statistics.
+| Name | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | **yes** | Hosted PostgreSQL URL (`postgres://` / `postgresql://` accepted; use the provider's **pooled** URL). `POSTGRES_URL` is also read, so Vercel's Neon/Supabase integrations work unchanged. |
+| `ADMIN_API_KEY` | **yes in production** | Any long random string. Required by every endpoint that changes data (initialise, inject, tick, resolve). If unset on a production/preview deployment those endpoints answer 403. Generate: `python -c "import secrets;print(secrets.token_urlsafe(32))"` |
+| `SIM_DEVICE_COUNT`, `SIM_SEED`, `ACTIVE_WINDOW_MINUTES`, `RETENTION_HOURS`, `ENVIRONMENT`, `CORS_ORIGINS` | no | Tuning only; see `.env.example`. CORS is off by default (same origin). |
 
-### How it works
-1. `POST /api/simulator/seed` creates the fleet, generates 24 h of 5-minute telemetry, schedules scenarios (4 end within the last ~30 min so the dashboard has live threats), trains the Isolation Forest on the **clean first third only**, then runs the pipeline over all history.
-2. Live: `POST /api/simulator/tick` (or the background loop) generates new samples, applies any injected scenarios, and runs the same pipeline with rolling-window history from the DB.
-3. Event → severity is `Low/Medium/High/Critical` from `risk = 0.30·ML + 0.30·threat weight + 0.20·device criticality + 0.20·rule evidence`. Critical events open/extend an **incident**; incidents auto-resolve after 60 min without a new Critical event.
-4. Dashboard definitions: *Active Threats* = distinct (device, threat class) with a High/Critical event in the last 60 min. *Critical Incidents* = open Critical incidents. *Security score* = `100 − max(0.6·recent max risk, 0.1·latest anomaly score)`.
+Never commit `.env`; the ZIP contains only `.env.example`.
 
-### Measured detection quality (simulated data only)
-`python -m scripts.evaluate` (3 seeds × 24 devices, share of in-scenario samples flagged):
+## Deploy with vercel.com/drop
 
-| Scenario | Hybrid (IDS + IF) | IDS rules only | Isolation Forest only | Correct threat class |
+1. **Database:** create a PostgreSQL database (e.g. Neon via Vercel → Storage / Marketplace, or any hosted Postgres) and copy its pooled connection string. Tables are created automatically on first request.
+2. Go to **https://vercel.com/drop**, upload `TWIN-VERCEL-READY.zip`, deploy. (The first deploy has no database yet; the page loads and shows a "DATABASE_URL is not configured" banner. That is expected.)
+3. In the new project: **Settings → Environment Variables** → add `DATABASE_URL` and `ADMIN_API_KEY` (all environments), then **Deployments → ⋯ → Redeploy**. (If you attached a database through the Vercel integration, `DATABASE_URL`/`POSTGRES_URL` is already set.)
+4. Open the site → paste your admin key → **Initialise simulation** (a few seconds). Then use **Simulator** (top right) to inject scenarios and advance/live-run the simulation.
+5. Check `https://<your-domain>/api/health` → `{"status":"ok","database":"ok",…}`. API docs: `/api/docs`.
+
+No Framework Preset or Root Directory changes are needed: `vercel.json` sets `framework: vite`.
+
+## Local development
+
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+cp .env.example .env                                   # set DATABASE_URL (a local or hosted Postgres)
+npm install
+npm run dev:api        # terminal 1 → FastAPI on :8000
+npm run dev            # terminal 2 → http://localhost:5173 (Vite proxies /api to :8000)
+```
+Tests (need Python deps; API tests need a throw-away database whose name ends in `_test`, because they TRUNCATE tables):
+```bash
+python -m pytest -q                                                    # API tests are skipped without a DB
+TEST_DATABASE_URL=postgresql+psycopg2://USER:PW@localhost:5432/twin_test python -m pytest -q
+npm run typecheck && npm run build
+python -m scripts.evaluate                                             # detection metrics
+```
+
+## How it was made serverless-safe
+
+- No background loop: **Live mode** is driven by the browser (one `POST /api/simulator/tick` every 5 s while the tab is open). The server keeps nothing between requests.
+- The trained Isolation Forest is stored in PostgreSQL (`model_artifacts`) and cached per warm instance; a cold start loads it from the DB, and if it is missing it retrains from clean baseline rows.
+- Lazy DB engine (nothing connects at import), `NullPool` on Vercel, advisory-locked `create_all` once per instance, clean 503s when the DB is missing/unreachable (no connection details leaked).
+- One aggregated `GET /api/dashboard/overview` replaces six polling calls (polling pauses while the tab is hidden).
+- SHAP is imported lazily, only when an event needs explaining.
+
+## Detection quality (simulated data only)
+`python -m scripts.evaluate`, 3 seeds × 24 devices, share of in-scenario samples flagged:
+
+| Scenario | Hybrid | IDS only | Isolation Forest only | Correct class |
 |---|---|---|---|---|
 | abnormal_temperature | 89% | 89% | 6% | 100% |
 | suspicious_logins | 99% | 99% | 21% | 100% |
 | network_spike | 100% | 100% | 17% | 100% |
 | telemetry_manipulation | 72% | 71% | 11% | 99% |
 
-False-positive rate on clean data: 0.11%.
-**Honest reading:** with the current 12 features, a single global model and a threshold at the training 99.9th percentile, the Isolation Forest alone has low recall on these attacks; the rule-based IDS carries most detections. Telemetry manipulation needs an 8-sample window to fill before the flat-line rule fires. Improving the ML side (per-device-type models, feature selection, threshold tuning) is a Milestone 2 candidate. These numbers describe the simulator I wrote, not real industrial traffic.
+False-positive rate on clean data 0.11%. The rule-based IDS carries most detections; the Isolation Forest alone has low recall with the current features/threshold (improvement planned). These numbers describe my simulator, not real industrial traffic.
 
-## Run locally
+## What was verified, and what was not
 
-Prerequisites: Python 3.12, Node 20+, PostgreSQL 14+ (or Docker for `docker-compose.yml`).
+Verified in the build sandbox (Python 3.12, Node 22, PostgreSQL 16): clean-venv install of the exact pins (`pip check` clean); **34 pytest tests pass** (simulator, pipeline, API through the real `api.index:app`, CORS/admin-key, URL normalisation, 503 without DB, cold-start model reload); `tsc --noEmit` and `vite build` pass; browser end-to-end of the production build against an empty database (empty state → key rejected → initialise → inject → advance → browser-driven live mode); no `localhost` literal in the bundle and no cross-origin requests; `vercel.json` rewrites/headers compile without error in `@vercel/routing-utils`.
 
-```bash
-# 1. Database (either use docker...)
-POSTGRES_PASSWORD=choose-a-password docker compose up -d
-# ...or create it in an existing PostgreSQL:
-#   CREATE USER twin WITH PASSWORD '...'; CREATE DATABASE twin OWNER twin; CREATE DATABASE twin_test OWNER twin;
+**Not verified (no access to Vercel from the sandbox):** an actual Vercel build/deploy, the deployed function's cold-start time, bundle size accepted by your plan, and a hosted-Postgres connection.
 
-# 2. Backend
-cd backend
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env     # edit DATABASE_URL (password) - never commit .env
-uvicorn app.main:app --reload --port 8000
+## Manual steps / known risks
 
-# 3. Frontend (new terminal)
-cd frontend
-npm install
-npm run dev              # http://localhost:5173  (proxies /api to :8000)
-```
-Open http://localhost:5173 → click **Initialise simulation** (≈3 s). Then use **Simulator** (top right) to inject a scenario and **Advance 10 ticks** / **Start live loop** and watch the cards, tables and charts change.
-
-## Tests
-```bash
-cd backend
-python -m pytest -q                                   # simulator + pipeline tests (no DB needed); API tests skip
-TEST_DATABASE_URL=postgresql+psycopg2://twin:PASSWORD@localhost:5432/twin_test python -m pytest -q   # + API tests
-python -m scripts.evaluate                            # detection metrics table above
-```
-`TEST_DATABASE_URL` must point to a database whose name ends in `_test` (the tests TRUNCATE tables; the suite refuses otherwise).
-Status on my last run: 23 backend tests passing. There are **no frontend unit tests** yet.
-
-## Deploy
-
-### Backend + PostgreSQL (any container/Python host: Render, Railway, Fly.io, ...)
-Vercel is used only for the frontend: the API keeps a PostgreSQL connection pool, holds the optional live-loop task, and writes a model file, none of which suit serverless functions.
-1. Create a PostgreSQL instance and a web service from `backend/` (the `Dockerfile` or `Procfile` start command). `render.yaml` is a ready blueprint for Render.
-2. Environment variables:
-
-| Variable | Value |
-|---|---|
-| `DATABASE_URL` | provider connection string (`postgres://` is auto-converted) |
-| `ENVIRONMENT` | `production` |
-| `CORS_ORIGINS` | your exact Vercel URL, e.g. `https://twin-xyz.vercel.app` (comma-separate several). Optional `CORS_ORIGIN_REGEX` for preview URLs |
-| `ADMIN_API_KEY` | long random string. In `production` simulator/mutating endpoints are **refused** if unset |
-| `AUTO_SEED` | `true` to seed on first boot if the DB is empty |
-
-3. Check `https://<backend>/api/health` returns `{"status":"ok"}`.
-
-### Frontend → Vercel
-1. Push the repo, **Add New → Project**, and set **Root Directory = `frontend`** (Vite is auto-detected; `vercel.json` sets build, output `dist`, SPA rewrite and security headers).
-2. Add environment variable **`VITE_API_URL`** = your backend URL (no trailing slash) for Production (and Preview if wanted), then deploy. It is baked in at build time, so redeploy after changing it. A production build without it shows a clear error banner instead of calling localhost.
-3. Put the resulting Vercel URL into the backend's `CORS_ORIGINS`.
-4. Open the site → **Simulator** → paste the admin key (kept in `sessionStorage`, not in the bundle).
-
-## Known limitations / not done yet
-- **Not yet verified:** the Docker image build, `docker-compose.yml`, `render.yaml`, and an actual Vercel deploy. I could only test the local stack (PostgreSQL 16, uvicorn, Vite dev server, headless Chromium).
-- No Alembic migrations (`create_all` on startup). No authentication or roles (the "A. Sharma" profile is a static placeholder). Read endpoints are public; only simulator/resolve endpoints take the admin key.
-- The sidebar pages other than Dashboard show a "not implemented yet" placeholder (Digital Twin, Threat Detection, Incidents, XAI Analysis, Incident Response, Analytics, Audit Logs, Settings). Incident resolve exists in the API but not the UI.
-- The "+2%" twin trend badge and the 4,129-device scale in the reference are not reproduced: the default fleet is 24 simulated devices (`SIM_DEVICE_COUNT`).
-- The live loop runs inside one API process (use a single worker). The model file is on local disk; if lost (e.g. redeploy) it is retrained automatically from clean baseline rows in the DB.
-- Tests cover simulator, pipeline, API and CORS/admin checks; no load, security, or frontend tests.
+- You must supply `DATABASE_URL` and `ADMIN_API_KEY`, then redeploy (env changes apply to new deployments only).
+- **Bundle size:** installed dependencies are about 290 MB (≈400 MB with bytecode). Vercel's current docs give a 500 MB uncompressed limit for Python functions; older docs/plans cite 250 MB. If your build fails with a size error, enable Vercel's Large Functions or drop SHAP/pandas-heavy parts (SHAP itself is only ~4 MB, the cost is numpy/pandas/scipy/scikit-learn).
+- **Routing model:** this uses the documented file-based `/api` Python function plus an explicit `framework: vite`. Vercel notes that a detected *Python framework preset* takes precedence over `/api` functions, which is why the preset is pinned. If a deploy serves the API for every URL or 404s on `/api/*`, switch to Vercel *Services* (beta; needs the "Services" preset set in the dashboard) or host the API separately.
+- **Function time:** `maxDuration` is 60 s (initialisation takes ~3 s locally). Cold starts import pandas/scikit-learn (a few seconds).
+- No authentication or roles yet (read endpoints are public; the "A. Sharma" profile is a placeholder). No Alembic migrations (`create_all`). Dashboard pages other than Dashboard are placeholders. No scheduled/automatic ticking: Vercel Cron on the Hobby plan is limited to daily runs, so live mode stays browser-driven.
+- Telemetry older than `RETENTION_HOURS` (72) is purged on each tick to bound database growth.
