@@ -45,7 +45,7 @@ def test_seed_creates_events_with_explanations(client):
     assert ev and {"ts", "event_type", "severity", "source_device"} <= ev[0].keys()
     with SessionLocal() as db:
         e = db.scalars(select(SecurityEvent).limit(1)).one()
-        assert e.details["explanation"] and e.details["explain_method"] in ("shap", "abs_deviation")
+        assert e.details["explanation"] and e.details["explain_method"] == "occlusion"
 
 
 def test_injected_scenario_changes_dashboard_data(client):

@@ -50,12 +50,12 @@ def test_scenario_is_detected_and_classified(pipe, scenario, expected):
     assert outside.iloc[:20].flagged.sum() <= 1  # little/no alarm before the scenario starts
 
 
-def test_ml_only_detection_and_shap_explanations(pipe):
+def test_flagged_rows_carry_feature_attributions(pipe):
     g, p = pipe
     g.params.clear()
     res = p.analyze(g.frame(40, start=500, scenarios={2: ("network_spike", 10, 20)}))
     row = res[res.flagged & (res.device_pk == 2)].iloc[0]
-    assert row["explain_method"] == "shap"
+    assert row["explain_method"] == "occlusion"
     assert row["explanation"][0]["feature"] in FEATURES
     assert row["explanation"][0]["contribution"] > 0
 

@@ -52,7 +52,10 @@ def get_pipeline(session: Session) -> SecurityPipeline:
         return SecurityPipeline(train_from_db(session))
     if _cache is None or _cache[0] != latest:
         art = session.get(ModelArtifact, latest)
-        _cache = (latest, AnomalyDetector.from_bytes(art.payload))
+        try:
+            _cache = (latest, AnomalyDetector.from_bytes(art.payload))
+        except Exception:  # artifact from an incompatible version: retrain from the clean baseline
+            return SecurityPipeline(train_from_db(session))
     return SecurityPipeline(_cache[1])
 
 
