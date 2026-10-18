@@ -1,9 +1,33 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base
+
+
+class UTCDateTime(TypeDecorator):
+    """Timezone-aware UTC datetimes on every backend. PostgreSQL keeps tz natively; SQLite (used for the
+    in-process demo database) returns naive values, so we normalise both directions."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+BigIntPK = BigInteger().with_variant(Integer(), "sqlite")  # SQLite only auto-increments INTEGER primary keys
 
 
 class Device(Base):
@@ -14,7 +38,7 @@ class Device(Base):
     facility: Mapped[str] = mapped_column(String(64))
     ip_address: Mapped[str] = mapped_column(String(45))
     is_online: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class DigitalTwin(Base):
@@ -24,14 +48,14 @@ class DigitalTwin(Base):
     device_pk: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), unique=True)
     status: Mapped[str] = mapped_column(String(16), default="Healthy")
     security_score: Mapped[float] = mapped_column(Float, default=100.0)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class Telemetry(Base):
     __tablename__ = "telemetry"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True)
     device_pk: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"))
-    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ts: Mapped[datetime] = mapped_column(UTCDateTime())
     temperature: Mapped[float] = mapped_column(Float)
     pressure: Mapped[float] = mapped_column(Float)
     vibration: Mapped[float] = mapped_column(Float)
@@ -49,7 +73,7 @@ class Telemetry(Base):
 class SecurityEvent(Base):
     __tablename__ = "security_events"
     id: Mapped[int] = mapped_column(primary_key=True)
-    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    ts: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
     device_pk: Mapped[int] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     event_type: Mapped[str] = mapped_column(String(64))
     threat_class: Mapped[str] = mapped_column(String(32))
@@ -69,9 +93,9 @@ class Incident(Base):
     threat_class: Mapped[str] = mapped_column(String(32))
     severity: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # open | resolved
-    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    last_event_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    last_event_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     event_count: Mapped[int] = mapped_column(Integer, default=1)
 
 
@@ -84,13 +108,13 @@ class ScenarioRun(Base):
     ticks_done: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | finished
     params: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
 class ModelArtifact(Base):
     """Serialized Isolation Forest. Serverless instances have no durable disk, so the model lives in PostgreSQL."""
     __tablename__ = "model_artifacts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     payload: Mapped[bytes] = mapped_column(LargeBinary)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)

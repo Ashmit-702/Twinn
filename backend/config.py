@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     database_url: str = Field("", validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL",
                                                                 "POSTGRES_URL_NON_POOLING"))
     environment: str = "development"
+    force_demo: bool = Field(False, validation_alias="DEMO_MODE")  # DEMO_MODE=true forces demo even if a DB is set
     admin_api_key: str = ""  # required for any endpoint that changes data (simulator, incident resolve)
     cors_origins: str = ""  # same-origin deployment needs none; only for a separately hosted frontend
     cors_origin_regex: str = ""
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def origins(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def use_database(self) -> bool:
+        return bool(self.database_url) and not self.force_demo
 
     @property
     def is_production(self) -> bool:

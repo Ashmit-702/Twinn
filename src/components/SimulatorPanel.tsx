@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import type { IngestResult, ScenarioInfo, SimDevice, SimStatus } from '../types'
+import type { IngestResult, ModeInfo, ScenarioInfo, SimDevice, SimStatus } from '../types'
 import AdminKeyInput from './AdminKeyInput'
 
 interface Props {
+  mode?: ModeInfo
   onChange: () => Promise<void>
   onClose: () => void
   live: boolean
@@ -13,7 +14,7 @@ interface Props {
 
 interface Msg { err?: boolean; text: string }
 
-export default function SimulatorPanel({ onChange, onClose, live, onLiveChange, liveError }: Props) {
+export default function SimulatorPanel({ mode, onChange, onClose, live, onLiveChange, liveError }: Props) {
   const [status, setStatus] = useState<SimStatus | null>(null)
   const [devices, setDevices] = useState<SimDevice[]>([])
   const [scenarios, setScenarios] = useState<ScenarioInfo[]>([])
@@ -22,6 +23,7 @@ export default function SimulatorPanel({ onChange, onClose, live, onLiveChange, 
   const [duration, setDuration] = useState(20)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<Msg | null>(null)
+  const demo = mode !== undefined && !mode.writes_enabled
 
   const refresh = useCallback(async () => {
     try {
@@ -52,11 +54,13 @@ export default function SimulatorPanel({ onChange, onClose, live, onLiveChange, 
       <p className="muted small">All devices and attacks are simulated. Scenario data flows through the real detection pipeline.</p>
       {status && (
         <p className="small">
-          {status.devices} devices · {status.telemetry_rows.toLocaleString()} telemetry rows · model: <b>{status.model_ready ? 'stored in database' : 'not trained'}</b>
+          {status.devices} devices · {status.telemetry_rows.toLocaleString()} telemetry rows · model: <b>{status.model_ready ? (demo ? 'trained (demo)' : 'stored in database') : 'not trained'}</b>
           {status.active_scenarios.length > 0 && <> · active: {status.active_scenarios.map((a) => `${a.scenario} on ${a.device_id} (${a.ticks_done}/${a.total_ticks})`).join(', ')}</>}
         </p>
       )}
-      <AdminKeyInput hint="Admin key (required to change data in production)" />
+      {demo
+        ? <p className="small demo-note"><b>DEMO MODE is read-only.</b> Scenario injection, advancing the simulation and live mode need a PostgreSQL database (set <code>DATABASE_URL</code>). You can still browse the simulated devices and scenarios below.</p>
+        : <AdminKeyInput hint="Admin key (required to change data in production)" />}
       <div className="row sel">
         <label>Scenario
           <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
@@ -73,10 +77,10 @@ export default function SimulatorPanel({ onChange, onClose, live, onLiveChange, 
         </label>
       </div>
       <div className="row">
-        <button disabled={busy || !device} onClick={() => run('Inject', () => api.inject(scenario, device, duration))}>Inject scenario</button>
-        <button disabled={busy} onClick={() => run('Advance 10 ticks', () => api.tick(10))}>Advance 10 ticks</button>
-        <button onClick={() => onLiveChange(!live)} aria-pressed={live}>{live ? 'Stop live mode' : 'Start live mode'}</button>
-        <button className="danger" disabled={busy} onClick={() => { if (window.confirm('Reset all simulated data and regenerate 24h of history?')) void run('Re-seed', api.seed) }}>
+        <button disabled={demo || busy || !device} onClick={() => run('Inject', () => api.inject(scenario, device, duration))}>Inject scenario</button>
+        <button disabled={demo || busy} onClick={() => run('Advance 10 ticks', () => api.tick(10))}>Advance 10 ticks</button>
+        <button disabled={demo} onClick={() => onLiveChange(!live)} aria-pressed={live}>{live ? 'Stop live mode' : 'Start live mode'}</button>
+        <button className="danger" disabled={demo || busy} onClick={() => { if (window.confirm('Reset all simulated data and regenerate 24h of history?')) void run('Re-seed', api.seed) }}>
           Reset &amp; re-seed
         </button>
       </div>

@@ -57,21 +57,40 @@ def events(session: Session, limit: int = 20) -> list[dict]:
          .order_by(SecurityEvent.ts.desc(), SecurityEvent.id.desc()).limit(limit))
     return [{"id": e.id, "ts": e.ts.isoformat(), "event_type": e.event_type, "severity": e.severity,
              "source_device": dev, "threat_class": e.threat_class, "risk_score": e.risk_score,
-             "anomaly_score": e.anomaly_score, "source": e.source} for e, dev in session.execute(q)]
+             "anomaly_score": e.anomaly_score, "source": e.source, "rule_ids": e.rule_ids}
+            for e, dev in session.execute(q)]
+
+
+def event_detail(session: Session, event_id: int) -> dict | None:
+    row = session.execute(select(SecurityEvent, Device).join(Device, Device.id == SecurityEvent.device_pk)
+                          .where(SecurityEvent.id == event_id)).first()
+    if row is None:
+        return None
+    e, d = row
+    return {"id": e.id, "ts": e.ts.isoformat(), "event_type": e.event_type, "severity": e.severity,
+            "threat_class": e.threat_class, "source": e.source, "anomaly_score": e.anomaly_score,
+            "risk_score": e.risk_score, "rule_ids": e.rule_ids, "device_id": d.device_id,
+            "device_type": d.device_type, "facility": d.facility,
+            "features": e.details.get("features", {}), "explanation": e.details.get("explanation", []),
+            "explain_method": e.details.get("explain_method")}
 
 
 def threats_timeline(session: Session, hours: int = 24) -> list[dict]:
+    """Hourly buckets. Aggregated in Python so it behaves identically on PostgreSQL and the demo database."""
     now = _now()
     start = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours - 1)
-    bucket = func.date_trunc("hour", SecurityEvent.ts)
-    high = SecurityEvent.severity.in_(["High", "Critical"])
-    q = (select(bucket, func.count().filter(SecurityEvent.severity != "Low"), func.count().filter(high))
-         .where(SecurityEvent.ts >= start).group_by(bucket))
-    got = {b: (t, h) for b, t, h in session.execute(q)}
+    counts: dict[datetime, list[int]] = {}
+    for ts, sev in session.execute(select(SecurityEvent.ts, SecurityEvent.severity).where(SecurityEvent.ts >= start)):
+        if sev == "Low":
+            continue
+        c = counts.setdefault(ts.replace(minute=0, second=0, microsecond=0), [0, 0])
+        c[0] += 1
+        if sev in ("High", "Critical"):
+            c[1] += 1
     out = []
     for i in range(hours):
         b = start + timedelta(hours=i)
-        t, h = got.get(b, (0, 0))
+        t, h = counts.get(b, (0, 0))
         out.append({"ts": b.isoformat(), "threats": t, "high_severity": h})
     return out
 

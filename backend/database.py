@@ -1,9 +1,9 @@
 """Lazy, serverless-friendly database access.
 
-Nothing connects at import time, so the app (and the dashboard shell) loads even if DATABASE_URL is
-missing; endpoints then answer 503 with a clear message. On Vercel every invocation may run in a fresh
-instance, so connections are not pooled in-process (NullPool): use your provider's *pooled* connection
-string (PgBouncer / Neon pooler) to keep connection counts low.
+Nothing connects at import time. If DATABASE_URL is missing or unreachable, request dependencies use the
+synthetic read-only demo database. On Vercel every invocation may run in a fresh instance, so connections
+are not pooled in-process (NullPool): use your provider's *pooled* connection string (PgBouncer / Neon
+pooler) to keep connection counts low.
 """
 import logging
 import os
@@ -36,7 +36,7 @@ def get_engine() -> Engine:
         url = get_settings().database_url
         if not url:
             raise DatabaseNotConfigured("DATABASE_URL is not configured on the server.")
-        kwargs: dict = {"pool_pre_ping": True}
+        kwargs: dict = {"pool_pre_ping": True, "connect_args": {"connect_timeout": 5}}
         if os.getenv("VERCEL"):
             kwargs["poolclass"] = NullPool
         else:

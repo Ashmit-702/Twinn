@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, FlaskConical, Layers, Search, ShieldAlert } from '
 import { api } from '../api'
 import AdminKeyInput from '../components/AdminKeyInput'
 import { AnomalyChart, StatusDonut, ThreatsChart } from '../components/Charts'
+import { ModeBadge, ModeNotice } from '../components/ModeBadge'
 import SimulatorPanel from '../components/SimulatorPanel'
 import type { DashboardState } from '../useDashboard'
 import type { Severity, TwinStatus } from '../types'
@@ -51,7 +52,7 @@ export default function Dashboard({ dash, hours, setHours }: Props) {
 
   // Browser-driven "live mode": the server is stateless/serverless, so the tab asks for one tick at a time.
   useEffect(() => {
-    if (!live) return
+    if (!live || !data?.mode.writes_enabled) return
     let cancelled = false
     const id = setInterval(async () => {
       if (inFlight.current || document.hidden) return
@@ -64,7 +65,7 @@ export default function Dashboard({ dash, hours, setHours }: Props) {
       } finally { inFlight.current = false }
     }, LIVE_TICK_MS)
     return () => { cancelled = true; clearInterval(id) }
-  }, [live, reload])
+  }, [live, reload, data?.mode.writes_enabled])
 
   const twins = useMemo(() => (data?.twins ?? []).filter((t) =>
     !q || [t.twin_code, t.device_id, t.facility, t.status].some((v) => v.toLowerCase().includes(q))), [data, q])
@@ -88,6 +89,7 @@ export default function Dashboard({ dash, hours, setHours }: Props) {
           <div className="muted">{today}</div>
         </div>
         <div className="top-actions">
+          <ModeBadge mode={data?.mode} />
           <button className="sim-btn" onClick={() => setShowSim((v) => !v)} aria-expanded={showSim}>
             <FlaskConical size={16} /> Simulator{live && <span className="dot ok" title="Live mode on" />}
           </button>
@@ -101,9 +103,10 @@ export default function Dashboard({ dash, hours, setHours }: Props) {
           </button>
           <div className="avatar sm">AS</div>
         </div>
-        {showSim && <SimulatorPanel onChange={reload} onClose={() => setShowSim(false)} live={live} onLiveChange={(v) => { setLiveError(null); setLive(v) }} liveError={liveError} />}
+        {showSim && <SimulatorPanel mode={data?.mode} onChange={reload} onClose={() => setShowSim(false)} live={live} onLiveChange={(v) => { setLiveError(null); setLive(v) }} liveError={liveError} />}
       </header>
 
+      <ModeNotice mode={data?.mode} />
       {error && <div className="banner" role="alert">Can’t load data from the API: {error}</div>}
       {loading && !data && <div className="muted">Loading…</div>}
 

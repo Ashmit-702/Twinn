@@ -1,4 +1,4 @@
-import type { IngestResult, Overview, ScenarioInfo, SimDevice, SimStatus } from './types'
+import type { EventDetail, Incident, IngestResult, ModeInfo, Overview, ScenarioInfo, SecurityEvent, SimDevice, SimStatus } from './types'
 
 // All requests are same-origin (/api/...). In production Vercel routes /api/* to the Python function;
 // in local development Vite proxies /api to the FastAPI dev server (see vite.config.ts).
@@ -39,6 +39,11 @@ async function request<T>(path: string, init: { method?: string; body?: unknown 
 
 export const api = {
   overview: (hours: number) => request<Overview>(`/api/dashboard/overview?hours=${hours}`),
+  status: () => request<ModeInfo>('/api/status'),
+  events: (limit: number) => request<SecurityEvent[]>(`/api/dashboard/events?limit=${limit}`),
+  eventDetail: (id: number) => request<EventDetail>(`/api/dashboard/events/${id}`),
+  incidents: (status: 'open' | 'resolved' | 'all') => request<Incident[]>(`/api/incidents?status=${status}`),
+  resolveIncident: (id: number) => request<{ id: number; status: string }>(`/api/incidents/${id}/resolve`, { method: 'PATCH' }),
   simStatus: () => request<SimStatus>('/api/simulator/status'),
   simDevices: () => request<SimDevice[]>('/api/simulator/devices'),
   simScenarios: () => request<ScenarioInfo[]>('/api/simulator/scenarios'),

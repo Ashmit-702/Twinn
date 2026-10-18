@@ -1,13 +1,14 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from backend.config import get_settings
-from backend.database import DatabaseNotConfigured, get_engine
+from backend.database import get_engine
 from backend.routers import dashboard, incidents, simulator
+from backend.routers.deps import get_db
+from backend.runtime import mode_info
 
 log = logging.getLogger("twin")
 settings = get_settings()
@@ -50,15 +51,22 @@ app.include_router(simulator.router)
 app.include_router(incidents.router)
 
 
+@app.get("/api/status", tags=["meta"])
+def status(db=Depends(get_db)):
+    """Current runtime mode: DEMO MODE or DATABASE CONNECTED (never contains secrets)."""
+    return mode_info(db)
+
+
 @app.get("/api/health", tags=["meta"])
 def health():
+    """Always 200 when the API itself is up; `mode`/`database` describe the data source."""
     base = {"environment": settings.environment, "admin_key_configured": bool(settings.admin_api_key)}
+    if not settings.use_database:
+        return {**base, "status": "ok", "mode": "demo", "database": "not configured (demo mode)"}
     try:
         with get_engine().connect() as conn:
             conn.execute(text("SELECT 1"))
-    except DatabaseNotConfigured:
-        return JSONResponse({**base, "status": "degraded", "database": "DATABASE_URL not configured"}, status_code=503)
     except Exception:
         log.exception("health check: database unreachable")
-        return JSONResponse({**base, "status": "degraded", "database": "unreachable"}, status_code=503)
-    return {**base, "status": "ok", "database": "ok"}
+        return {**base, "status": "degraded", "mode": "demo", "database": "unreachable (serving demo data)"}
+    return {**base, "status": "ok", "mode": "database", "database": "ok"}

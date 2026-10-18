@@ -1,93 +1,72 @@
-# TWIN — Smart Factory Security (Vercel-ready)
+# TWIN — Smart Factory Security (Vercel-ready, v2)
 
-Cybersecurity monitoring dashboard for simulated smart-factory digital twins. **All devices, telemetry, attacks and responses are simulated.**
-One Vercel project: **React + Vite + TypeScript** frontend and a **Python FastAPI** function, same origin (`/api/*`), hosted **PostgreSQL**. Anomaly detection is a NumPy Isolation Forest + rule-based IDS + risk assessment (see "Why no scikit-learn / SHAP").
+Cybersecurity dashboard for **simulated** smart-factory digital twins. One Vercel project: React + Vite + TypeScript frontend and a Python FastAPI function at `/api/*`.
 
-```
-api/index.py          Vercel Python entrypoint (exports ASGI `app`)
-backend/              FastAPI app: routers, simulator, security pipeline (Isolation Forest, IDS, risk, attribution), services
-src/                  React + TypeScript dashboard
-vercel.json           build, /api rewrite, SPA fallback, function settings
-requirements.txt      pinned runtime deps (bundled into the function)   requirements-dev.txt  + uvicorn, pytest, httpx
-tests/  scripts/      pytest suite, detection evaluation
-```
+**After deploying you see a working dashboard immediately, with no database.** Add PostgreSQL later and the same app switches to persistent storage. The header always shows which mode is active.
+
+| | DEMO MODE | DATABASE CONNECTED |
+|---|---|---|
+| When | `DATABASE_URL` not set (or DB unreachable, or `DEMO_MODE=true`) | `DATABASE_URL` set and reachable |
+| Data | Synthetic factory generated on the server by the real pipeline | PostgreSQL, persistent |
+| Persistence | **None.** Regenerated on cold starts, every 10 min and on redeploys; can differ between serverless instances | Yes |
+| Actions | Read-only (inject / advance / live mode / resolve are disabled, API answers 409) | Need `ADMIN_API_KEY` |
 
 ## Environment variables
-
 | Name | Required | Purpose |
 |---|---|---|
-| `DATABASE_URL` | **yes** | Hosted PostgreSQL URL (`postgres://` / `postgresql://` accepted; use the provider's **pooled** URL). `POSTGRES_URL` is also read, so Vercel's Neon/Supabase integrations work unchanged. |
-| `ADMIN_API_KEY` | **yes in production** | Any long random string. Required by every endpoint that changes data (initialise, inject, tick, resolve). If unset on a production/preview deployment those endpoints answer 403. Generate: `python -c "import secrets;print(secrets.token_urlsafe(32))"` |
-| `SIM_DEVICE_COUNT`, `SIM_SEED`, `ACTIVE_WINDOW_MINUTES`, `RETENTION_HOURS`, `ENVIRONMENT`, `CORS_ORIGINS` | no | Tuning only; see `.env.example`. CORS is off by default (same origin). |
+| `DATABASE_URL` | no | Hosted PostgreSQL URL (`postgres://` accepted; use the provider's **pooled** URL). `POSTGRES_URL` is also read, so Vercel's Neon/Supabase integrations work as-is. |
+| `ADMIN_API_KEY` | only for write actions | Long random string, checked on the backend only (never sent to or bundled in the frontend; you type it into the UI, kept in `sessionStorage`). |
+| `DEMO_MODE` | no | `true` forces demo data even if a database is configured. |
+| `SIM_DEVICE_COUNT`, `SIM_SEED`, `ACTIVE_WINDOW_MINUTES`, `RETENTION_HOURS`, `ENVIRONMENT`, `CORS_ORIGINS` | no | Tuning (see `.env.example`). |
 
-Never commit `.env`; the ZIP contains only `.env.example`.
+## Deploy (vercel.com/drop)
+1. Upload the project ZIP and deploy. Open the site: **DEMO MODE** dashboard, nothing to configure.
+2. *(Optional, for persistence)* Add a PostgreSQL database (e.g. Neon via Vercel → Storage), make sure `DATABASE_URL` is set, set `ADMIN_API_KEY`, then **Redeploy**.
+3. Reload. The badge turns to **DATABASE CONNECTED**. The first request after connecting creates the tables and seeds the factory (24 devices, 24 h of telemetry, trained model; a few seconds), exactly once: guarded by a PostgreSQL advisory lock and re-checked inside it, so restarts and concurrent instances never duplicate data.
+4. Check `/api/health` and `/api/status` (neither exposes secrets). API docs: `/api/docs`.
 
-## Deploy with vercel.com/drop
+If `DATABASE_URL` is set but unreachable, the app does **not** error: it serves demo data, shows "DEMO MODE" with the reason, and retries the database after 30 s.
 
-1. **Database:** create a PostgreSQL database (e.g. Neon via Vercel → Storage / Marketplace, or any hosted Postgres) and copy its pooled connection string. Tables are created automatically on first request.
-2. Go to **https://vercel.com/drop**, upload `TWIN-VERCEL-READY.zip`, deploy. (The first deploy has no database yet; the page loads and shows a "DATABASE_URL is not configured" banner. That is expected.)
-3. In the new project: **Settings → Environment Variables** → add `DATABASE_URL` and `ADMIN_API_KEY` (all environments), then **Deployments → ⋯ → Redeploy**. (If you attached a database through the Vercel integration, `DATABASE_URL`/`POSTGRES_URL` is already set.)
-4. Open the site → paste your admin key → **Initialise simulation** (a few seconds). Then use **Simulator** (top right) to inject scenarios and advance/live-run the simulation.
-5. Check `https://<your-domain>/api/health` → `{"status":"ok","database":"ok",…}`. API docs: `/api/docs`.
+## Pages
+Dashboard, Digital Twin, Threat Detection (click a row for its explanation), Incidents (resolve needs PostgreSQL + admin key), XAI Analysis, Settings (read-only status). *Incident Response, Analytics and Audit Logs are still placeholders.*
 
-No Framework Preset or Root Directory changes are needed: `vercel.json` sets `framework: vite`.
+## Detection (unchanged)
+Simulator → preprocessing → NumPy **Isolation Forest** (`backend/security/iforest.py`) → rule-based **IDS** → threat classification → **risk score** → incidents. Explanations use **occlusion attribution** (reset one feature to its normal value, measure the anomaly-score drop); it is **not SHAP**, and the UI says so. SHAP/scikit-learn were removed because they pushed the Vercel function past its 500 MB bundle limit (installed deps are now ~200 MB).
+
+Measured on simulated data (`python -m scripts.evaluate`, share of attack samples flagged): hybrid 89% / 99% / 100% / 72% (temperature / logins / network / telemetry manipulation), false-positive rate 0.08%; the Isolation Forest alone catches only 6–15%, the IDS rules carry most detections. These figures describe my simulator, not real plant traffic.
 
 ## Local development
 
+### Windows PowerShell
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+npm ci
+# Terminal 1: API (DEMO MODE works without DATABASE_URL)
+npm run dev:api
+# Terminal 2: frontend
+npm run dev
+```
+Open `http://localhost:5173`. The Vite development server proxies `/api` to `http://127.0.0.1:8000` by default. Set `DEV_API_PROXY` in `.env` if the API uses a different local address.
+
+### macOS / Linux
 ```bash
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-cp .env.example .env                                   # set DATABASE_URL (a local or hosted Postgres)
-npm install
-npm run dev:api        # terminal 1 → FastAPI on :8000
-npm run dev            # terminal 2 → http://localhost:5173 (Vite proxies /api to :8000)
+npm ci
 ```
-Tests (need Python deps; API tests need a throw-away database whose name ends in `_test`, because they TRUNCATE tables):
-```bash
-python -m pytest -q                                                    # API tests are skipped without a DB
-TEST_DATABASE_URL=postgresql+psycopg2://USER:PW@localhost:5432/twin_test python -m pytest -q
-npm run typecheck && npm run build
-python -m scripts.evaluate                                             # detection metrics
-```
+Then run `npm run dev:api` in one terminal and `npm run dev` in another.
 
-## How it was made serverless-safe
+Tests: `python -m pytest -q` (DEMO MODE tests need no PostgreSQL). For database-backed API tests, set `TEST_DATABASE_URL=postgresql+psycopg2://USER:PW@localhost:5432/twin_test`; the database name must end in `_test` because tests clear its tables. Frontend checks: `npm run typecheck` and `npm run build`.
 
-- No background loop: **Live mode** is driven by the browser (one `POST /api/simulator/tick` every 5 s while the tab is open). The server keeps nothing between requests.
-- The trained Isolation Forest is stored in PostgreSQL (`model_artifacts`) and cached per warm instance; a cold start loads it from the DB, and if it is missing it retrains from clean baseline rows.
-- Lazy DB engine (nothing connects at import), `NullPool` on Vercel, advisory-locked `create_all` once per instance, clean 503s when the DB is missing/unreachable (no connection details leaked).
-- One aggregated `GET /api/dashboard/overview` replaces six polling calls (polling pauses while the tab is hidden).
-- The model is a small NumPy artifact (~200 KB, pickle-free) stored in the database; per-event explanations are computed only for flagged rows.
+## Verification status for this ZIP
+- Python suite run during this merge: **31 passed, 1 skipped** without a PostgreSQL test database.
+- API import, DEMO MODE startup, telemetry generation, detection, read-only protections and status responses are covered by the passing tests.
+- The frontend dependency install/build was **not re-run in this merge environment** because the npm registry fetch could not complete. The ZIP includes the existing `package.json` and `package-lock.json`; Vercel must install dependencies and build the frontend during deployment.
+- The merged ZIP has not itself been deployed to Vercel in this verification run. A hosted PostgreSQL connection has not been tested here.
 
-## Why no scikit-learn / SHAP (bundle size)
-A first version with scikit-learn + SciPy + SHAP failed on Vercel with `LAMBDA_SIZE_EXCEEDED` (548 MB; the cap for a Python function is 500 MB). Those libraries alone are ~200 MB, so this version ships only NumPy + pandas (~200 MB installed incl. bytecode, measured):
-
-- **Isolation Forest:** `backend/security/iforest.py`, a from-scratch NumPy implementation of the original algorithm (same scoring formula and sign convention as scikit-learn).
-- **Explanations:** SHAP is replaced by **occlusion attribution** (reset one feature to its normal value and measure how much the anomaly score drops). It is a single-feature counterfactual, *not* SHAP, and can under-credit anomalies that need several features together. Events record `explain_method: "occlusion"`.
-- To get scikit-learn + SHAP back, run the API on a container host or enable Vercel Large Functions (beta, `VERCEL_SUPPORT_LARGE_FUNCTIONS=1`, availability varies by plan).
-
-## Detection quality (simulated data only)
-`python -m scripts.evaluate`, 3 seeds × 24 devices, share of in-scenario samples flagged:
-
-| Scenario | Hybrid | IDS only | Isolation Forest only | Correct class |
-|---|---|---|---|---|
-| abnormal_temperature | 89% | 89% | 6% | 100% |
-| suspicious_logins | 99% | 99% | 15% | 100% |
-| network_spike | 100% | 100% | 10% | 100% |
-| telemetry_manipulation | 72% | 71% | 7% | 99% |
-
-False-positive rate on clean data 0.08%. The rule-based IDS carries most detections; the Isolation Forest alone has low recall with the current features/threshold (improvement planned). These numbers describe my simulator, not real industrial traffic.
-
-## What was verified, and what was not
-
-Verified in the build sandbox (Python 3.12, Node 22, PostgreSQL 16): clean-venv install of the exact pins (`pip check` clean, and confirmed free of scikit-learn/SciPy/SHAP); **38 pytest tests pass** (simulator, NumPy forest, pipeline, API through the real `api.index:app`, CORS/admin-key, URL normalisation, 503 without DB, cold-start model reload); `tsc --noEmit` and `vite build` pass; browser end-to-end of the production build against an empty database (empty state → key rejected → initialise → inject → advance → browser-driven live mode); no `localhost` literal in the bundle and no cross-origin requests; `vercel.json` rewrites/headers compile without error in `@vercel/routing-utils`.
-
-**Not verified (no access to Vercel from the sandbox):** an actual Vercel build/deploy (the bundle size below is my estimate from a local install of the same pins), the deployed function's cold-start time, and a hosted-Postgres connection.
-
-## Manual steps / known risks
-
-- You must supply `DATABASE_URL` and `ADMIN_API_KEY`, then redeploy (env changes apply to new deployments only).
-- **Bundle size:** the pinned dependencies measure ~198 MB installed (with bytecode); with Vercel's runtime files expect roughly 220 MB, well under the 500 MB Python limit and about the 250 MB general limit. Even if `node_modules` were swept into the function (it is excluded in `vercel.json`) the total would be ~350 MB. If a build still reports `LAMBDA_SIZE_EXCEEDED`, expand the build log's "Large dependencies" list and send it along.
-- **Routing model:** this uses the documented file-based `/api` Python function plus an explicit `framework: vite`. Vercel notes that a detected *Python framework preset* takes precedence over `/api` functions, which is why the preset is pinned. If a deploy serves the API for every URL or 404s on `/api/*`, switch to Vercel *Services* (beta; needs the "Services" preset set in the dashboard) or host the API separately.
-- **Function time:** `maxDuration` is 60 s (initialisation takes ~3 s locally). Cold starts import numpy/pandas (about a second or two).
-- No authentication or roles yet (read endpoints are public; the "A. Sharma" profile is a placeholder). No Alembic migrations (`create_all`). Dashboard pages other than Dashboard are placeholders. No scheduled/automatic ticking: Vercel Cron on the Hobby plan is limited to daily runs, so live mode stays browser-driven.
-- Telemetry older than `RETENTION_HOURS` (72) is purged on each tick to bound database growth.
+## Manual steps and limits
+- DEMO MODE needs no secrets or database setup. It is read-only and its synthetic data is not durable across serverless instances/cold starts or redeploys.
+- For persistent mode, configure a hosted PostgreSQL `DATABASE_URL` (prefer the provider's pooled URL), set `ADMIN_API_KEY` for write actions, and redeploy.
+- No login/roles are implemented yet; read endpoints are public and the “A. Sharma” profile is a placeholder. Schema creation uses SQLAlchemy `create_all` rather than Alembic migrations. Demo-mode scenario injection is disabled because writes would not persist. Browser-driven live mode advances one tick from an open browser tab; there is no server-side background loop.

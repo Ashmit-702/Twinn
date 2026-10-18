@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.routers.deps import get_db, require_admin
+from backend.routers.deps import get_db, require_writes
 from backend.models import Device, ScenarioRun, Telemetry
 from backend.services import model_store, sim_service
 from backend.simulator.profiles import PROFILES
@@ -49,7 +49,7 @@ def scenarios():
     return [{"id": k, "description": v} for k, v in SCENARIOS.items()]
 
 
-@router.post("/seed", dependencies=[Depends(require_admin)])
+@router.post("/seed", dependencies=[Depends(require_writes)])
 def seed(body: SeedIn = SeedIn(), db: Session = Depends(get_db)):
     try:
         return sim_service.seed(db, body.hours)
@@ -57,7 +57,7 @@ def seed(body: SeedIn = SeedIn(), db: Session = Depends(get_db)):
         raise HTTPException(400, str(e))
 
 
-@router.post("/tick", dependencies=[Depends(require_admin)])
+@router.post("/tick", dependencies=[Depends(require_writes)])
 def tick(body: TickIn = TickIn(), db: Session = Depends(get_db)):
     try:
         return sim_service.tick(db, body.count)
@@ -65,7 +65,7 @@ def tick(body: TickIn = TickIn(), db: Session = Depends(get_db)):
         raise HTTPException(409, str(e))
 
 
-@router.post("/scenarios", dependencies=[Depends(require_admin)])
+@router.post("/scenarios", dependencies=[Depends(require_writes)])
 def inject(body: ScenarioIn, db: Session = Depends(get_db)):
     try:
         run = sim_service.inject_scenario(db, body.scenario, body.device_id, body.duration_ticks)

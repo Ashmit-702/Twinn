@@ -15,7 +15,7 @@ from backend.security.pipeline import SecurityPipeline
 from backend.security.preprocessing import feature_matrix, preprocess
 from backend.simulator.profiles import CHANNELS
 
-_cache: tuple[int, AnomalyDetector] | None = None
+_cache: dict[str, tuple[int, AnomalyDetector]] = {}
 
 
 class ModelNotReady(RuntimeError):
@@ -23,8 +23,11 @@ class ModelNotReady(RuntimeError):
 
 
 def clear_cache() -> None:
-    global _cache
-    _cache = None
+    _cache.clear()
+
+
+def _key(session: Session) -> str:
+    return session.get_bind().url.render_as_string(hide_password=True)
 
 
 def _latest_id(session: Session) -> int | None:
@@ -37,26 +40,26 @@ def model_ready(session: Session) -> bool:
 
 def set_detector(session: Session, detector: AnomalyDetector, meta: dict | None = None) -> None:
     """Replace the stored model (caller commits). Keeps only the newest artifact."""
-    global _cache
     session.execute(delete(ModelArtifact))
     art = ModelArtifact(created_at=datetime.now(timezone.utc), payload=detector.to_bytes(), meta=meta or {})
     session.add(art)
     session.flush()
-    _cache = (art.id, detector)
+    _cache[_key(session)] = (art.id, detector)
 
 
 def get_pipeline(session: Session) -> SecurityPipeline:
-    global _cache
     latest = _latest_id(session)
     if latest is None:
         return SecurityPipeline(train_from_db(session))
-    if _cache is None or _cache[0] != latest:
+    key = _key(session)
+    cached = _cache.get(key)
+    if cached is None or cached[0] != latest:
         art = session.get(ModelArtifact, latest)
         try:
-            _cache = (latest, AnomalyDetector.from_bytes(art.payload))
+            cached = _cache[key] = (latest, AnomalyDetector.from_bytes(art.payload))
         except Exception:  # artifact from an incompatible version: retrain from the clean baseline
             return SecurityPipeline(train_from_db(session))
-    return SecurityPipeline(_cache[1])
+    return SecurityPipeline(cached[1])
 
 
 def train_from_db(session: Session, limit: int = 30000) -> AnomalyDetector:

@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
-from backend.models import Device, DigitalTwin, ScenarioRun, Telemetry
+from backend.models import Device, DigitalTwin, Incident, ScenarioRun, SecurityEvent, Telemetry
 from backend.security.anomaly import AnomalyDetector
 from backend.security.pipeline import SecurityPipeline
 from backend.security.preprocessing import feature_matrix, preprocess
@@ -55,7 +55,8 @@ def _schedule(n_dev: int, ticks: int, train_ticks: int, rng: np.random.Generator
     return out
 
 
-def seed(session: Session, hours: int = 24, step_minutes: int = 5) -> dict:
+def seed(session: Session, hours: int = 24, step_minutes: int = 5, anchor: datetime | None = None,
+         wipe: bool = True) -> dict:
     """(Re)create the fleet, 24h of history with scenarios, train the model, run detection over history."""
     s = get_settings()
     rng = np.random.default_rng(s.sim_seed)
@@ -64,8 +65,13 @@ def seed(session: Session, hours: int = 24, step_minutes: int = 5) -> dict:
     if ticks < train_ticks + 60:
         raise SimError("hours too small; use at least 12")
 
-    session.execute(text("TRUNCATE incidents, security_events, scenario_runs, telemetry, digital_twins, devices "
-                         "RESTART IDENTITY CASCADE"))
+    if wipe:
+        if session.get_bind().dialect.name == "postgresql":
+            session.execute(text("TRUNCATE incidents, security_events, scenario_runs, telemetry, digital_twins, "
+                                 "devices RESTART IDENTITY CASCADE"))
+        else:
+            for table in (Incident, SecurityEvent, ScenarioRun, Telemetry, DigitalTwin, Device):
+                session.execute(delete(table))
     fleet = build_fleet(s.sim_device_count, rng)
     devices = [Device(device_id=f["device_id"], device_type=f["device_type"], facility=f["facility"],
                       ip_address=f["ip_address"], is_online=True) for f in fleet]
@@ -74,7 +80,7 @@ def seed(session: Session, hours: int = 24, step_minutes: int = 5) -> dict:
     session.add_all(DigitalTwin(twin_code=f["twin_code"], device_pk=d.id) for f, d in zip(fleet, devices))
     devs = [{"device_pk": d.id, "device_id": d.device_id, "device_type": d.device_type} for d in devices]
 
-    end = _now().replace(second=0, microsecond=0)
+    end = (anchor or _now()).replace(second=0, microsecond=0)
     stamps = [end - timedelta(minutes=step_minutes * (ticks - 1 - k)) for k in range(ticks)]
     sched = _schedule(len(devs), ticks, train_ticks, rng)
     by_dev: dict[int, list[dict]] = {}

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.routers.deps import get_db, require_admin
+from backend.routers.deps import get_db, require_writes
 from backend.models import Device, Incident
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -20,7 +20,7 @@ def list_incidents(status: str = Query("open", pattern="^(open|resolved|all)$"),
              "event_count": i.event_count} for i, dev in db.execute(q.limit(200))]
 
 
-@router.patch("/{incident_id}/resolve", dependencies=[Depends(require_admin)])
+@router.patch("/{incident_id}/resolve", dependencies=[Depends(require_writes)])
 def resolve(incident_id: int, db: Session = Depends(get_db)):
     inc = db.get(Incident, incident_id)
     if inc is None:
