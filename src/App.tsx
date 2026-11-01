@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import Dashboard from './pages/Dashboard'
-import ComingSoon from './pages/ComingSoon'
+import Analytics from './pages/Analytics'
 import DigitalTwin from './pages/DigitalTwin'
 import Incidents from './pages/Incidents'
 import Settings from './pages/Settings'
@@ -24,8 +24,8 @@ export default function App() {
           <Route path="/incidents" element={<Incidents mode={dash.data?.mode} />} />
           <Route path="/xai-analysis" element={<XaiAnalysis mode={dash.data?.mode} />} />
           <Route path="/settings" element={<Settings dash={dash} />} />
-          <Route path="/soon/:slug" element={<ComingSoon />} />
-          <Route path="*" element={<ComingSoon />} />
+          <Route path="/analytics" element={<Analytics dash={dash} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

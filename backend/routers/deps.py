@@ -60,7 +60,8 @@ def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
     """Endpoints that change data need X-Admin-Key == ADMIN_API_KEY. Refused outright in production if unset."""
     s = get_settings()
     if s.admin_api_key:
-        if not x_admin_key or not hmac.compare_digest(x_admin_key, s.admin_api_key):
+        supplied = (x_admin_key or "").strip()
+        if not supplied or not hmac.compare_digest(supplied.encode(), s.admin_api_key.encode()):
             raise HTTPException(401, "Invalid or missing admin key")
     elif s.is_production:
         raise HTTPException(403, "ADMIN_API_KEY is not configured on the server")

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import AdminKeyInput from '../components/AdminKeyInput'
 import { PageShell } from '../components/ModeBadge'
@@ -8,10 +9,15 @@ import type { Incident, ModeInfo, Severity } from '../types'
 const SEV: Record<Severity, string> = { Critical: 'sev-critical', High: 'sev-high', Medium: 'sev-medium', Low: 'sev-low' }
 
 export default function Incidents({ mode }: { mode?: ModeInfo }) {
-  const [filter, setFilter] = useState<'open' | 'resolved' | 'all'>('open')
+  const [params] = useSearchParams()
+  const focus = Number(params.get('incident')) || null
+  const [filter, setFilter] = useState<'open' | 'resolved' | 'all'>(focus ? 'all' : 'open')
   const { data, error, loading, reload } = useApi<Incident[]>(() => api.incidents(filter), filter)
   const [msg, setMsg] = useState<string | null>(null)
   const canResolve = mode?.writes_enabled ?? false
+  useEffect(() => {
+    if (focus && data) document.getElementById(`incident-${focus}`)?.scrollIntoView({ block: 'center' })
+  }, [focus, data])
 
   const resolve = async (id: number) => {
     setMsg(null)
@@ -34,7 +40,7 @@ export default function Incidents({ mode }: { mode?: ModeInfo }) {
             <thead><tr><th>#</th><th>Incident</th><th>Device</th><th>Severity</th><th>Status</th><th>Opened</th><th>Events</th><th /></tr></thead>
             <tbody>
               {(data ?? []).map((i) => (
-                <tr key={i.id}>
+                <tr key={i.id} id={`incident-${i.id}`} className={i.id === focus ? 'sel' : undefined}>
                   <td>{i.id}</td><td>{i.title}</td><td>{i.device_id}</td><td className={SEV[i.severity]}>{i.severity}</td>
                   <td><span className={`dot ${i.status === 'open' ? 'bad' : 'ok'}`} /> {i.status}</td>
                   <td>{new Date(i.opened_at).toLocaleString([], { hour12: false })}</td><td>{i.event_count}</td>

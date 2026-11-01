@@ -1,3 +1,4 @@
+import AdminKeyInput from '../components/AdminKeyInput'
 import { PageShell } from '../components/ModeBadge'
 import type { DashboardState } from '../useDashboard'
 
@@ -18,6 +19,7 @@ export default function Settings({ dash }: { dash: DashboardState }) {
           <div><span>Explanation method</span><b>occlusion (not SHAP)</b></div>
         </div>
         <p className="muted small">{mode?.message}</p>
+        <div className="inline-key"><AdminKeyInput hint="Admin key for write actions (stored in this browser only)" /></div>
         <h4>To enable persistent storage</h4>
         <ol className="small">
           <li>Add a PostgreSQL database (e.g. Neon) and set <code>DATABASE_URL</code> in Vercel → Settings → Environment Variables.</li>

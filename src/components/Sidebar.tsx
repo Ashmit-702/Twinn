@@ -1,21 +1,19 @@
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import {
-  AlertTriangle, BookOpen, Brain, ChevronDown, LayoutGrid, Layers, Search, Settings, ShieldCheck, TrendingUp,
+  AlertTriangle, Brain, ChevronDown, LayoutGrid, Layers, Search, Settings, TrendingUp,
 } from 'lucide-react'
 
-interface NavEntry { slug: string; label: string; icon: LucideIcon; alert?: boolean; ready?: boolean }
+interface NavEntry { slug: string; label: string; icon: LucideIcon; alert?: boolean }
 
 const NAV: NavEntry[] = [
   { slug: '', label: 'Dashboard', icon: LayoutGrid },
-  { ready: true, slug: 'digital-twin', label: 'Digital Twin', icon: Layers },
-  { ready: true, slug: 'threat-detection', label: 'Threat Detection', icon: Search },
-  { ready: true, slug: 'incidents', label: 'Incidents', icon: AlertTriangle, alert: true },
-  { ready: true, slug: 'xai-analysis', label: 'XAI Analysis', icon: Brain },
-  { slug: 'incident-response', label: 'Incident Response', icon: ShieldCheck },
+  { slug: 'digital-twin', label: 'Digital Twin', icon: Layers },
+  { slug: 'threat-detection', label: 'Threat Detection', icon: Search },
+  { slug: 'incidents', label: 'Incidents', icon: AlertTriangle, alert: true },
+  { slug: 'xai-analysis', label: 'XAI Analysis', icon: Brain },
   { slug: 'analytics', label: 'Analytics', icon: TrendingUp },
-  { slug: 'audit-logs', label: 'Audit Logs', icon: BookOpen },
-  { ready: true, slug: 'settings', label: 'Settings', icon: Settings },
+  { slug: 'settings', label: 'Settings', icon: Settings },
 ]
 
 function Logo() {
@@ -52,8 +50,8 @@ export default function Sidebar({ openIncidents = 0 }: { openIncidents?: number 
         <ChevronDown size={16} />
       </div>
       <nav>
-        {NAV.map(({ slug, label, icon: Icon, alert, ready }) => (
-          <NavLink key={label} to={ready ? `/${slug}` : slug ? `/soon/${slug}` : '/'} end className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+        {NAV.map(({ slug, label, icon: Icon, alert }) => (
+          <NavLink key={label} to={`/${slug}`} end className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
             {({ isActive }) => (
               <>
                 <Icon size={20} strokeWidth={1.7} />

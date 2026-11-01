@@ -15,7 +15,7 @@ Cybersecurity dashboard for **simulated** smart-factory digital twins. One Verce
 | Name | Required | Purpose |
 |---|---|---|
 | `DATABASE_URL` | no | Hosted PostgreSQL URL (`postgres://` accepted; use the provider's **pooled** URL). `POSTGRES_URL` is also read, so Vercel's Neon/Supabase integrations work as-is. |
-| `ADMIN_API_KEY` | only for write actions | Long random string, checked on the backend only (never sent to or bundled in the frontend; you type it into the UI, kept in `sessionStorage`). |
+| `ADMIN_API_KEY` | only for write actions | Long random string, checked on the backend only (never sent to or bundled in the frontend; you type it once into the Settings page or any “Admin key” field; it is kept in this browser's `localStorage` and sent as the `X-Admin-Key` header; surrounding whitespace is ignored on both sides). |
 | `DEMO_MODE` | no | `true` forces demo data even if a database is configured. |
 | `SIM_DEVICE_COUNT`, `SIM_SEED`, `ACTIVE_WINDOW_MINUTES`, `RETENTION_HOURS`, `ENVIRONMENT`, `CORS_ORIGINS` | no | Tuning (see `.env.example`). |
 
@@ -28,7 +28,7 @@ Cybersecurity dashboard for **simulated** smart-factory digital twins. One Verce
 If `DATABASE_URL` is set but unreachable, the app does **not** error: it serves demo data, shows "DEMO MODE" with the reason, and retries the database after 30 s.
 
 ## Pages
-Dashboard, Digital Twin, Threat Detection (click a row for its explanation), Incidents (resolve needs PostgreSQL + admin key), XAI Analysis, Settings (read-only status). *Incident Response, Analytics and Audit Logs are still placeholders.*
+Dashboard, Digital Twin, Threat Detection (click a row for its explanation), Incidents (resolve needs PostgreSQL + admin key), XAI Analysis, Analytics (event/incident summaries from the database), Settings (status + admin key field). The bell on the Dashboard lists open incidents and recent High/Critical events; each entry opens the matching Incidents row or XAI event.
 
 ## Detection (unchanged)
 Simulator → preprocessing → NumPy **Isolation Forest** (`backend/security/iforest.py`) → rule-based **IDS** → threat classification → **risk score** → incidents. Explanations use **occlusion attribution** (reset one feature to its normal value, measure the anomaly-score drop); it is **not SHAP**, and the UI says so. SHAP/scikit-learn were removed because they pushed the Vercel function past its 500 MB bundle limit (installed deps are now ~200 MB).

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { getAdminKey, setAdminKey } from '../api'
 
-/** The admin key is kept in sessionStorage only (never bundled) and sent as the X-Admin-Key header. */
+/** The admin key is kept in this browser only (never bundled) and sent as the X-Admin-Key header. */
 export default function AdminKeyInput({ hint }: { hint?: string }) {
   const [value, setValue] = useState(getAdminKey)
   return (

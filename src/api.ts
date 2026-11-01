@@ -4,13 +4,17 @@ import type { EventDetail, Incident, IngestResult, ModeInfo, Overview, ScenarioI
 // in local development Vite proxies /api to the FastAPI dev server (see vite.config.ts).
 const ADMIN_KEY_STORAGE = 'twin_admin_key'
 
+// The key lives in this browser only (never bundled). localStorage keeps it across tabs/reloads; the in-memory
+// copy is the fallback when storage is unavailable, so a key typed anywhere is used by every request.
+let memoryKey = ''
 export function getAdminKey(): string {
-  try { return sessionStorage.getItem(ADMIN_KEY_STORAGE) ?? '' } catch { return '' }
+  try { return (localStorage.getItem(ADMIN_KEY_STORAGE) ?? memoryKey).trim() } catch { return memoryKey.trim() }
 }
 export function setAdminKey(value: string): void {
+  memoryKey = value.trim()
   try {
-    if (value) sessionStorage.setItem(ADMIN_KEY_STORAGE, value)
-    else sessionStorage.removeItem(ADMIN_KEY_STORAGE)
+    if (memoryKey) localStorage.setItem(ADMIN_KEY_STORAGE, memoryKey)
+    else localStorage.removeItem(ADMIN_KEY_STORAGE)
   } catch { /* storage unavailable (private mode) */ }
 }
 
@@ -28,7 +32,8 @@ async function request<T>(path: string, init: { method?: string; body?: unknown 
   if (!res.ok) {
     let detail: unknown
     try { detail = (await res.json() as { detail?: unknown }).detail } catch { /* not JSON */ }
-    throw new Error(typeof detail === 'string' ? detail : `Request failed (${res.status} ${res.statusText})`)
+    const msg = typeof detail === 'string' ? detail : `Request failed (${res.status} ${res.statusText})`
+    throw new Error(res.status === 401 ? `${msg}. Enter the server's ADMIN_API_KEY in the "Admin key" field (Settings page).` : msg)
   }
   try {
     return (await res.json()) as T

@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     def _normalise(cls, v: str) -> str:
         return normalise_database_url(v)
 
+    @field_validator("admin_api_key")
+    @classmethod
+    def _strip_key(cls, v: str) -> str:
+        return v.strip().strip("\"'")  # stray whitespace/newline/quotes from pasted env values
+
     @property
     def origins(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]

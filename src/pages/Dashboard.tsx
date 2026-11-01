@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { AlertTriangle, Bell, FlaskConical, Layers, Search, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, FlaskConical, Layers, Search, ShieldAlert } from 'lucide-react'
 import { api } from '../api'
 import AdminKeyInput from '../components/AdminKeyInput'
 import { AnomalyChart, StatusDonut, ThreatsChart } from '../components/Charts'
 import { ModeBadge, ModeNotice } from '../components/ModeBadge'
+import NotificationBell from '../components/NotificationBell'
 import SimulatorPanel from '../components/SimulatorPanel'
 import type { DashboardState } from '../useDashboard'
 import type { Severity, TwinStatus } from '../types'
@@ -97,10 +98,7 @@ export default function Dashboard({ dash, hours, setHours }: Props) {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" aria-label="Filter tables" />
             <Search size={17} />
           </label>
-          <button className="icon-btn" aria-label={`${s?.open_incidents ?? 0} open incidents`}>
-            <Bell size={19} />
-            {s !== undefined && s.open_incidents > 0 && <b className="badge">{s.open_incidents}</b>}
-          </button>
+          <NotificationBell openIncidents={s?.open_incidents ?? 0} events={data?.events ?? []} />
           <div className="avatar sm">AS</div>
         </div>
         {showSim && <SimulatorPanel mode={data?.mode} onChange={reload} onClose={() => setShowSim(false)} live={live} onLiveChange={(v) => { setLiveError(null); setLive(v) }} liveError={liveError} />}
